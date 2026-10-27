@@ -1,0 +1,39 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --surface-primary: #FFFDF9;
+  --surface-subtle: #F4F1EA;
+  --surface-chip: #EDE9FE;
+  --ink-primary: #1D2440;
+  --ink-secondary: #525B7A;
+  --ink-muted: #6E7794;
+  --accent-primary: #5A4FE8;
+  --accent-coral: #FF7E6B;
+  --accent-gold: #F59E0B;
+  --accent-mint: #7CC98B;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100dvh;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  color: var(--ink-primary);
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+dialog:modal {
+  overscroll-behavior: contain;
+}
+
+dialog::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
