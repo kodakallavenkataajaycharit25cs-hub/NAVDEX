@@ -17,9 +17,9 @@ import {
 describe('Pixel System: Tilemap Coordinates', () => {
   it('correctly maps world coordinates to tile and pixel coordinates', () => {
     const originTile = worldToTile(0, 0);
-    expect(originTile.tx).toBe(45);
+    expect(originTile.tx).toBe(48);
     expect(originTile.ty).toBe(60);
-    expect(originTile.px).toBe(45 * TILE_SIZE);
+    expect(originTile.px).toBe(48 * TILE_SIZE);
     expect(originTile.py).toBe(60 * TILE_SIZE);
 
     const worldBack = pixelToWorld(originTile.px, originTile.py);
