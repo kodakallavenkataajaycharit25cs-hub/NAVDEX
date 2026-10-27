@@ -1,2 +1,70 @@
+# -----------------------------------------------------------------------------
+# Dependencies
+# -----------------------------------------------------------------------------
+# Never commit installed external libraries. They make the repo massive and can 
+# be re-installed using package.json files.
 node_modules/
+/jspm_packages/
+/typings/
+
+# -----------------------------------------------------------------------------
+# Production Build Outputs
+# -----------------------------------------------------------------------------
+# Disregard the generated build artifacts to keep your git tree clean.
+/build
+/dist
+/out
+*.tgz
+
+# -----------------------------------------------------------------------------
+# Environment Variables / Secrets
+# -----------------------------------------------------------------------------
+# CRITICAL: Prevent local API keys and environment configurations from leaking.
 .env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# -----------------------------------------------------------------------------
+# Logs and Diagnostics
+# -----------------------------------------------------------------------------
+# Disregard debug and error logs created during runtime execution.
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# -----------------------------------------------------------------------------
+# Testing and Cache Files
+# -----------------------------------------------------------------------------
+# Ignore unit testing coverage reports and framework performance caches.
+/coverage
+.eslintcache
+.node_repl_history
+.yarn-integrity
+.pnp
+.pnp.js
+.tsbuildinfo
+
+# -----------------------------------------------------------------------------
+# IDEs and Editor Configuration
+# -----------------------------------------------------------------------------
+# Exclude editor-specific workplace configurations and settings.
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# -----------------------------------------------------------------------------
+# Operating System Files
+# -----------------------------------------------------------------------------
+# Keep OS metadata out of your shared repository.
+.DS_Store
+Thumbs.db
+
