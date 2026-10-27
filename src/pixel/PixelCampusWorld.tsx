@@ -8,12 +8,13 @@ import {
 } from 'lucide-react';
 import { Application, Container, Graphics, Sprite, Texture } from 'pixi.js';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { PLACES_BY_ID } from '../data/campusPlaces';
 import { useCampusStore } from '../store/useCampusStore';
 import { PixelPetGenerator } from './pixelPetGenerator';
 import { PixelSpriteGenerator } from './pixelSpriteGenerator';
 import {
+  isPositionBlocked,
   PIXEL_BUILDINGS,
+  PixelBuildingDef,
   PixelTilemapRenderer,
   TILE_SIZE,
   worldToTile,
@@ -47,46 +48,45 @@ export const PixelCampusWorld: React.FC<PixelCampusWorldProps> = ({ onOpenStudio
   const triggerArrival = useCampusStore((s) => s.triggerArrival);
   const syncWalkProgress = useCampusStore((s) => s.syncWalkProgressFromFrame);
 
-  // Character & Pet configs
+  // Character config
   const charConfigRef = useRef<PixelCharacterConfig>(profileToPixelConfig(profile));
   useEffect(() => {
     charConfigRef.current = profileToPixelConfig(profile);
   }, [profile]);
 
-  // Initial spawn position
-  const initialPlace = PLACES_BY_ID[currentBlockId] || PLACES_BY_ID['GATE'];
-  const initTile = worldToTile(initialPlace.entranceVisualPos.x, initialPlace.entranceVisualPos.z);
+  // Initial Spawn Position: Outside Main Gate
+  const gateBuilding = PIXEL_BUILDINGS.find((b) => b.id === 'GATE') || PIXEL_BUILDINGS[0];
+  const spawnX = gateBuilding.entranceTx * TILE_SIZE;
+  const spawnY = gateBuilding.entranceTy * TILE_SIZE;
 
-  const playerPosRef = useRef({ x: initTile.px, y: initTile.py });
+  const playerPosRef = useRef({ x: spawnX, y: spawnY });
   const playerDirRef = useRef<PixelDirection>('down');
   const playerAnimRef = useRef<PixelAnimState>('idle');
   const playerFrameRef = useRef(0);
 
-  const petPosRef = useRef({ x: initTile.px - 14, y: initTile.py + 4 });
+  const petPosRef = useRef({ x: spawnX - 14, y: spawnY + 4 });
   const petDirRef = useRef<PixelDirection>('down');
   const petAnimRef = useRef<PixelPetState>('idle');
   const petFrameRef = useRef(0);
 
-  // Breadcrumbs history ring for pet companion follow
+  // Breadcrumbs for pet companion follow
   const breadcrumbsRef = useRef<Array<{ x: number; y: number }>>([
-    { x: initTile.px - 6, y: initTile.py },
-    { x: initTile.px - 12, y: initTile.py + 2 },
+    { x: spawnX - 6, y: spawnY },
+    { x: spawnX - 12, y: spawnY + 2 },
   ]);
 
-  // Camera state
+  // Camera state — strictly tracks player position!
   const cameraRef = useRef({
-    x: initTile.px,
-    y: initTile.py,
-    targetX: initTile.px,
-    targetY: initTile.py,
-    zoom: 2.4, // Classic GBA Pokémon scale
+    x: spawnX,
+    y: spawnY,
+    zoom: 2.3, // Authentic Pokémon GBA scale
   });
 
   const waypointIdxRef = useRef(0);
-  const [zoomLevel, setZoomLevel] = useState(2.4);
+  const [zoomLevel, setZoomLevel] = useState(2.3);
   const keysPressedRef = useRef<{ [key: string]: boolean }>({});
 
-  // Trigger celebration confetti upon arrival
+  // Celebration upon arrival
   useEffect(() => {
     if (uiMode === 'arrived') {
       playerAnimRef.current = 'celebrate';
@@ -94,39 +94,27 @@ export const PixelCampusWorld: React.FC<PixelCampusWorldProps> = ({ onOpenStudio
       confetti({
         particleCount: 60,
         spread: 70,
-        origin: { y: 0.65 },
-        colors: ['#D32F2F', '#8CD88C', '#2979FF', '#FFD54F'],
+        origin: { y: 0.6 },
+        colors: ['#EF4444', '#10B981', '#3B82F6', '#F59E0B'],
       });
     }
   }, [uiMode]);
 
-  // Pan camera to destination when selected
-  useEffect(() => {
-    const targetId = selectedPlaceId || currentBlockId;
-    const place = PLACES_BY_ID[targetId];
-    if (place) {
-      const tile = worldToTile(place.entranceVisualPos.x, place.entranceVisualPos.z);
-      cameraRef.current.targetX = tile.px;
-      cameraRef.current.targetY = tile.py;
-    }
-  }, [selectedPlaceId, currentBlockId]);
-
-  // Teleport player when currentBlockId changes in explore mode
+  // Teleport player when changing block in explore mode
   useEffect(() => {
     if (uiMode !== 'walk') {
-      const place = PLACES_BY_ID[currentBlockId];
-      if (place) {
-        const tile = worldToTile(place.entranceVisualPos.x, place.entranceVisualPos.z);
-        playerPosRef.current = { x: tile.px, y: tile.py };
-        cameraRef.current.x = tile.px;
-        cameraRef.current.y = tile.py;
-        cameraRef.current.targetX = tile.px;
-        cameraRef.current.targetY = tile.py;
+      const b = PIXEL_BUILDINGS.find((item) => item.id === currentBlockId);
+      if (b) {
+        const tx = b.entranceTx * TILE_SIZE;
+        const ty = b.entranceTy * TILE_SIZE;
+        playerPosRef.current = { x: tx, y: ty };
+        cameraRef.current.x = tx;
+        cameraRef.current.y = ty;
       }
     }
   }, [currentBlockId, uiMode]);
 
-  // Reset walk waypoints when starting a walk
+  // Reset navigation waypoints when starting a walk
   useEffect(() => {
     if (uiMode === 'walk') {
       waypointIdxRef.current = 0;
@@ -135,7 +123,7 @@ export const PixelCampusWorld: React.FC<PixelCampusWorldProps> = ({ onOpenStudio
     }
   }, [uiMode, activeRoute]);
 
-  // Mount PixiJS Canvas Application with robust error protection
+  // Mount PixiJS Canvas Application
   useEffect(() => {
     let isCancelled = false;
     const container = containerRef.current;
@@ -154,7 +142,7 @@ export const PixelCampusWorld: React.FC<PixelCampusWorldProps> = ({ onOpenStudio
         await app.init({
           width,
           height,
-          backgroundColor: '#8CD88C', // GBA Pokémon soft mint green
+          backgroundColor: '#80CE78',
           autoDensity: true,
           resolution: Math.min(window.devicePixelRatio || 1, 2),
           antialias: false,
@@ -170,7 +158,6 @@ export const PixelCampusWorld: React.FC<PixelCampusWorldProps> = ({ onOpenStudio
 
         container.appendChild(app.canvas);
 
-        // World Container
         const world = new Container();
         worldContainerRef.current = world;
         app.stage.addChild(world);
@@ -182,7 +169,7 @@ export const PixelCampusWorld: React.FC<PixelCampusWorldProps> = ({ onOpenStudio
         const mapSprite = new Sprite(mapTexture);
         world.addChild(mapSprite);
 
-        // 2. Active Route & Paw Trail Layer
+        // 2. Active Route & Waypoint Paw Prints Layer
         const pathGraphics = new Graphics();
         pathGraphicsRef.current = pathGraphics;
         world.addChild(pathGraphics);
@@ -208,21 +195,28 @@ export const PixelCampusWorld: React.FC<PixelCampusWorldProps> = ({ onOpenStudio
         playerSprite.anchor.set(0.5, 0.9);
         world.addChild(playerSprite);
 
-        // Interactive Click on Tilemap / Buildings
+        // Interactive Building Clicks
         mapSprite.eventMode = 'static';
         mapSprite.on('pointerdown', (e) => {
           const localPos = e.getLocalPosition(world);
           for (const b of PIXEL_BUILDINGS) {
-            const bTile = worldToTile(b.worldX, b.worldZ);
-            const dist = Math.hypot(localPos.x - bTile.px, localPos.y - bTile.py);
-            if (dist < 44) {
+            const bx = b.tx * TILE_SIZE;
+            const by = b.ty * TILE_SIZE;
+            const bw = b.wTiles * TILE_SIZE;
+            const bh = b.hTiles * TILE_SIZE;
+            if (
+              localPos.x >= bx &&
+              localPos.x <= bx + bw &&
+              localPos.y >= by &&
+              localPos.y <= by + bh
+            ) {
               selectDestination(b.id);
               return;
             }
           }
         });
 
-        // ResizeObserver to safely adjust canvas dimensions without triggering Pixi internal _cancelResize bug
+        // ResizeObserver
         resizeObserver = new ResizeObserver((entries) => {
           for (const entry of entries) {
             const w = Math.floor(entry.contentRect.width);
@@ -234,18 +228,16 @@ export const PixelCampusWorld: React.FC<PixelCampusWorldProps> = ({ onOpenStudio
         });
         resizeObserver.observe(container);
 
-        // Animation counters
         let animTick = 0;
         let lastTime = performance.now();
 
-        // 60 FPS Game Loop
+        // Main 60 FPS Game Loop
         app.ticker.add(() => {
           const now = performance.now();
           const dt = Math.min((now - lastTime) / 1000, 0.1);
           lastTime = now;
           animTick += dt;
 
-          // Step animation frame every 120ms
           if (animTick >= 0.12) {
             animTick = 0;
             playerFrameRef.current = (playerFrameRef.current + 1) % 4;
@@ -253,53 +245,54 @@ export const PixelCampusWorld: React.FC<PixelCampusWorldProps> = ({ onOpenStudio
           }
 
           // ==========================================
-          // 1. MOVEMENT & NAVIGATION
+          // 1. MOVEMENT & COLLISION (Cannot Walk on Buildings!)
           // ==========================================
           const currentUIMode = useCampusStore.getState().uiMode;
           const currentSpeed = useCampusStore.getState().demoSpeed;
           const route = useCampusStore.getState().activeRoute;
+          const destId = useCampusStore.getState().selectedPlaceId;
 
           let isWalking = false;
 
-          if (currentUIMode === 'walk' && route && currentSpeed > 0) {
+          if (currentUIMode === 'walk' && destId && currentSpeed > 0) {
+            // Autonomous Walk to target building entrance
             isWalking = true;
             playerAnimRef.current = 'walk';
             petAnimRef.current = currentSpeed >= 4 ? 'run' : 'walk';
 
-            const waypoints = route.pawTrailPoints;
-            const currentWaypoint = waypoints[waypointIdxRef.current];
+            const targetBuilding =
+              PIXEL_BUILDINGS.find((b) => b.id === destId) || PIXEL_BUILDINGS[0];
+            const targetX = targetBuilding.entranceTx * TILE_SIZE;
+            const targetY = targetBuilding.entranceTy * TILE_SIZE;
 
-            if (currentWaypoint) {
-              const targetTile = worldToTile(currentWaypoint.x, currentWaypoint.z);
-              const dx = targetTile.px - playerPosRef.current.x;
-              const dy = targetTile.py - playerPosRef.current.y;
-              const dist = Math.hypot(dx, dy);
+            const dx = targetX - playerPosRef.current.x;
+            const dy = targetY - playerPosRef.current.y;
+            const dist = Math.hypot(dx, dy);
 
-              const moveSpeed = 48 * currentSpeed * dt;
+            const moveSpeed = 52 * currentSpeed * dt;
 
-              if (dist > 3) {
-                const vx = (dx / dist) * Math.min(moveSpeed, dist);
-                const vy = (dy / dist) * Math.min(moveSpeed, dist);
+            if (dist > 4) {
+              const vx = (dx / dist) * Math.min(moveSpeed, dist);
+              const vy = (dy / dist) * Math.min(moveSpeed, dist);
+
+              // Move along unblocked axis
+              if (!isPositionBlocked(playerPosRef.current.x + vx, playerPosRef.current.y)) {
                 playerPosRef.current.x += vx;
-                playerPosRef.current.y += vy;
-
-                if (Math.abs(dx) > Math.abs(dy)) {
-                  playerDirRef.current = dx > 0 ? 'right' : 'left';
-                } else {
-                  playerDirRef.current = dy > 0 ? 'down' : 'up';
-                }
-              } else {
-                waypointIdxRef.current++;
-                if (waypointIdxRef.current >= waypoints.length) {
-                  triggerArrival();
-                } else {
-                  const travelledDist = (waypointIdxRef.current / waypoints.length) * route.totalDistanceM;
-                  syncWalkProgress(travelledDist, useCampusStore.getState().selectedPlaceId || 'MECH');
-                }
               }
+              if (!isPositionBlocked(playerPosRef.current.x, playerPosRef.current.y + vy)) {
+                playerPosRef.current.y += vy;
+              }
+
+              if (Math.abs(dx) > Math.abs(dy)) {
+                playerDirRef.current = dx > 0 ? 'right' : 'left';
+              } else {
+                playerDirRef.current = dy > 0 ? 'down' : 'up';
+              }
+            } else {
+              triggerArrival();
             }
           } else if (currentUIMode === 'explore') {
-            // Manual keyboard / D-pad walk
+            // Manual keyboard / D-pad walk with solid collision sliding
             let mx = 0;
             let my = 0;
             const keys = keysPressedRef.current;
@@ -315,9 +308,18 @@ export const PixelCampusWorld: React.FC<PixelCampusWorldProps> = ({ onOpenStudio
               petAnimRef.current = 'walk';
 
               const len = Math.hypot(mx, my);
-              const walkSpeed = 54 * dt;
-              playerPosRef.current.x += (mx / len) * walkSpeed;
-              playerPosRef.current.y += (my / len) * walkSpeed;
+              const walkSpeed = 56 * dt;
+              const vx = (mx / len) * walkSpeed;
+              const vy = (my / len) * walkSpeed;
+
+              // Solid Collision Check on X axis with sliding
+              if (!isPositionBlocked(playerPosRef.current.x + vx, playerPosRef.current.y)) {
+                playerPosRef.current.x += vx;
+              }
+              // Solid Collision Check on Y axis with sliding
+              if (!isPositionBlocked(playerPosRef.current.x, playerPosRef.current.y + vy)) {
+                playerPosRef.current.y += vy;
+              }
 
               if (Math.abs(mx) > Math.abs(my)) {
                 playerDirRef.current = mx > 0 ? 'right' : 'left';
@@ -330,7 +332,7 @@ export const PixelCampusWorld: React.FC<PixelCampusWorldProps> = ({ onOpenStudio
           }
 
           // ==========================================
-          // 2. PET COMPANION FOLLOW LOGIC
+          // 2. PET COMPANION FOLLOW (Lag & Catchup)
           // ==========================================
           const playerPos = playerPosRef.current;
           const petPos = petPosRef.current;
@@ -350,8 +352,8 @@ export const PixelCampusWorld: React.FC<PixelCampusWorldProps> = ({ onOpenStudio
             const pdx = target.x - petPos.x;
             const pdy = target.y - petPos.y;
             const pdist = Math.hypot(pdx, pdy);
-            petPos.x += (pdx / pdist) * 88 * dt;
-            petPos.y += (pdy / pdist) * 88 * dt;
+            petPos.x += (pdx / pdist) * 90 * dt;
+            petPos.y += (pdy / pdist) * 90 * dt;
             petDirRef.current = pdx > 0 ? 'right' : 'left';
           } else if (distToPlayer > 30) {
             petAnimRef.current = 'walk';
@@ -396,38 +398,42 @@ export const PixelCampusWorld: React.FC<PixelCampusWorldProps> = ({ onOpenStudio
           petSprite.texture.source.scaleMode = 'nearest';
 
           // ==========================================
-          // 4. DRAW ROUTE WAYPOINTS & PAW PRINTS
+          // 4. DRAW ROUTE PATH & PAW PRINTS
           // ==========================================
           pathGraphics.clear();
-          const activeRt = useCampusStore.getState().activeRoute;
-          if (activeRt && activeRt.pawTrailPoints.length > 0) {
-            const pts = activeRt.pawTrailPoints;
+          const targetBlock = PIXEL_BUILDINGS.find(
+            (b) => b.id === useCampusStore.getState().selectedPlaceId
+          );
+          if (targetBlock) {
+            const destX = targetBlock.entranceTx * TILE_SIZE;
+            const destY = targetBlock.entranceTy * TILE_SIZE;
 
+            // Route guideline from player to target
             pathGraphics.beginPath();
-            const firstTile = worldToTile(pts[0].x, pts[0].z);
-            pathGraphics.moveTo(firstTile.px, firstTile.py);
-            for (let i = 1; i < pts.length; i++) {
-              const t = worldToTile(pts[i].x, pts[i].z);
-              pathGraphics.lineTo(t.px, t.py);
-            }
-            pathGraphics.stroke({ width: 3, color: 0x5a4fe8, alpha: 0.65 });
+            pathGraphics.moveTo(playerPos.x, playerPos.y);
+            pathGraphics.lineTo(destX, destY);
+            pathGraphics.stroke({ width: 3, color: 0x5a4fe8, alpha: 0.6 });
 
-            // Cute Paw Print circles along route
-            for (let i = 0; i < pts.length; i += 2) {
-              const t = worldToTile(pts[i].x, pts[i].z);
-              pathGraphics.circle(t.px, t.py, 2);
+            // Target entrance beacon circle
+            pathGraphics.circle(destX, destY, 8);
+            pathGraphics.fill({ color: 0x10b981, alpha: 0.8 });
+
+            // Cute paw prints along path
+            const count = 10;
+            for (let i = 1; i < count; i++) {
+              const rx = playerPos.x + (destX - playerPos.x) * (i / count);
+              const ry = playerPos.y + (destY - playerPos.y) * (i / count);
+              pathGraphics.circle(rx, ry, 2.5);
               pathGraphics.fill({ color: 0xff4081, alpha: 0.85 });
             }
           }
 
           // ==========================================
-          // 5. CAMERA SMOOTH LERP
+          // 5. CAMERA STRICTLY LOCKS ON CHARACTER!
           // ==========================================
-          const targetCamX = isWalking ? playerPos.x : cameraRef.current.targetX;
-          const targetCamY = isWalking ? playerPos.y : cameraRef.current.targetY;
-
-          cameraRef.current.x += (targetCamX - cameraRef.current.x) * 0.08;
-          cameraRef.current.y += (targetCamY - cameraRef.current.y) * 0.08;
+          // "the cam should always follow the charecter"
+          cameraRef.current.x += (playerPos.x - cameraRef.current.x) * 0.15;
+          cameraRef.current.y += (playerPos.y - cameraRef.current.y) * 0.15;
 
           const screenW = app.screen.width;
           const screenH = app.screen.height;
@@ -453,9 +459,7 @@ export const PixelCampusWorld: React.FC<PixelCampusWorldProps> = ({ onOpenStudio
 
     return () => {
       isCancelled = true;
-      if (resizeObserver) {
-        resizeObserver.disconnect();
-      }
+      if (resizeObserver) resizeObserver.disconnect();
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
       if (appRef.current) {
@@ -471,7 +475,6 @@ export const PixelCampusWorld: React.FC<PixelCampusWorldProps> = ({ onOpenStudio
     };
   }, [selectDestination, triggerArrival, syncWalkProgress]);
 
-  // Touch virtual D-pad handler
   const handleVirtualDpad = useCallback((dir: PixelDirection, pressed: boolean) => {
     const keyMap: Record<PixelDirection, string> = {
       up: 'ArrowUp',
@@ -489,12 +492,12 @@ export const PixelCampusWorld: React.FC<PixelCampusWorldProps> = ({ onOpenStudio
   };
 
   const centerOnPlayer = () => {
-    cameraRef.current.targetX = playerPosRef.current.x;
-    cameraRef.current.targetY = playerPosRef.current.y;
+    cameraRef.current.x = playerPosRef.current.x;
+    cameraRef.current.y = playerPosRef.current.y;
   };
 
   return (
-    <div className="relative w-full h-full overflow-hidden select-none bg-[#8CD88C]">
+    <div className="relative w-full h-full overflow-hidden select-none bg-[#80CE78]">
       {/* Pixi Canvas Mount Target */}
       <div ref={containerRef} className="absolute inset-0 w-full h-full" />
 
@@ -503,10 +506,10 @@ export const PixelCampusWorld: React.FC<PixelCampusWorldProps> = ({ onOpenStudio
         <div className="bg-[#1D2440]/90 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/20 shadow-lg flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-[#10B981] animate-ping" />
           <span className="text-white text-xs font-bold tracking-wide">
-            2D Pixel Campus
+            2D Pokémon Campus
           </span>
           <span className="text-xs text-white/60">
-            {PLACES_BY_ID[currentBlockId]?.id || 'MECH'}
+            {currentBlockId || 'GATE'}
           </span>
         </div>
 
@@ -599,7 +602,7 @@ export const PixelCampusWorld: React.FC<PixelCampusWorldProps> = ({ onOpenStudio
         </div>
       </div>
 
-      {/* Buildings Quick-Jump Pill Tray */}
+      {/* Quick Campus Destinations Tray (All blocks mapped!) */}
       <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 bg-[#1D2440]/85 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/20 shadow-xl overflow-x-auto max-w-[92vw]">
         {PIXEL_BUILDINGS.map((b) => {
           const isSelected = selectedPlaceId === b.id;
@@ -608,9 +611,6 @@ export const PixelCampusWorld: React.FC<PixelCampusWorldProps> = ({ onOpenStudio
               key={b.id}
               onClick={() => {
                 selectDestination(b.id);
-                const tile = worldToTile(b.worldX, b.worldZ);
-                cameraRef.current.targetX = tile.px;
-                cameraRef.current.targetY = tile.py;
               }}
               className={`px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1 ${
                 isSelected

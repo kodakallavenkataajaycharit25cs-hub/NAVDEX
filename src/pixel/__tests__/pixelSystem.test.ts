@@ -2,9 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { PixelPetGenerator } from '../pixelPetGenerator';
 import { PixelSpriteGenerator } from '../pixelSpriteGenerator';
 import {
+  CAMPUS_TILE_ORIGIN_X,
+  CAMPUS_TILE_ORIGIN_Y,
+  isPositionBlocked,
   METRES_PER_TILE,
   PIXEL_BUILDINGS,
   pixelToWorld,
+  SOLID_COLLISION_BOXES,
   TILE_SIZE,
   worldToTile,
 } from '../pixelTilemap';
@@ -14,32 +18,78 @@ import {
   profileToPixelConfig,
 } from '../types';
 
-describe('Pixel System: Tilemap Coordinates', () => {
+describe('Pixel System: Tilemap Coordinates & Buildings', () => {
   it('correctly maps world coordinates to tile and pixel coordinates', () => {
     const originTile = worldToTile(0, 0);
-    expect(originTile.tx).toBe(48);
-    expect(originTile.ty).toBe(60);
-    expect(originTile.px).toBe(48 * TILE_SIZE);
-    expect(originTile.py).toBe(60 * TILE_SIZE);
+    expect(originTile.tx).toBe(CAMPUS_TILE_ORIGIN_X);
+    expect(originTile.ty).toBe(CAMPUS_TILE_ORIGIN_Y);
+    expect(originTile.px).toBe(CAMPUS_TILE_ORIGIN_X * TILE_SIZE);
+    expect(originTile.py).toBe(CAMPUS_TILE_ORIGIN_Y * TILE_SIZE);
 
     const worldBack = pixelToWorld(originTile.px, originTile.py);
     expect(worldBack.x).toBeCloseTo(0, 1);
     expect(worldBack.z).toBeCloseTo(0, 1);
   });
 
-  it('contains the vertical slice landmark buildings with valid coordinates', () => {
+  it('contains the complete campus map buildings from user layout', () => {
     const ids = PIXEL_BUILDINGS.map((b) => b.id);
-    expect(ids).toContain('MECH');
-    expect(ids).toContain('GAL');
-    expect(ids).toContain('AMPHI');
-    expect(ids).toContain('MBA');
+    // Left column
+    expect(ids).toContain('ECE');
+    expect(ids).toContain('COE');
+    expect(ids).toContain('IT');
+    expect(ids).toContain('CSE');
+    expect(ids).toContain('CIVIL');
+    expect(ids).toContain('AIML');
+    expect(ids).toContain('HOSTEL');
+    expect(ids).toContain('SCHOOL');
+    // Center column
     expect(ids).toContain('GATE');
+    expect(ids).toContain('ADM');
+    expect(ids).toContain('GAL');
+    expect(ids).toContain('AT');
+    expect(ids).toContain('AUDI');
+    expect(ids).toContain('LIB');
+    expect(ids).toContain('SIC');
+    // Right column
+    expect(ids).toContain('ME');
+    expect(ids).toContain('MBA');
+    expect(ids).toContain('PU');
+    expect(ids).toContain('TEMP');
+    expect(ids).toContain('GROUND');
 
     PIXEL_BUILDINGS.forEach((b) => {
-      const tile = worldToTile(b.worldX, b.worldZ);
-      expect(tile.tx).toBeGreaterThan(0);
-      expect(tile.ty).toBeGreaterThan(0);
+      expect(b.tx).toBeGreaterThan(0);
+      expect(b.ty).toBeGreaterThan(0);
+      expect(b.entranceTx).toBeGreaterThan(0);
+      expect(b.entranceTy).toBeGreaterThan(0);
     });
+  });
+
+  it('prevents character from walking inside solid buildings', () => {
+    const admin = PIXEL_BUILDINGS.find((b) => b.id === 'ADM')!;
+    // Point inside Admin building should be blocked
+    const insideAdminX = (admin.tx + 4) * TILE_SIZE;
+    const insideAdminY = (admin.ty + 4) * TILE_SIZE;
+    expect(isPositionBlocked(insideAdminX, insideAdminY)).toBe(true);
+
+    // Point outside in front entrance should NOT be blocked
+    const entranceX = admin.entranceTx * TILE_SIZE;
+    const entranceY = admin.entranceTy * TILE_SIZE;
+    expect(isPositionBlocked(entranceX, entranceY)).toBe(false);
+  });
+
+  it('keeps Main Gate road open with a clear junction branch heading west', () => {
+    const gate = PIXEL_BUILDINGS.find((b) => b.id === 'GATE')!;
+    const gateEntranceX = gate.entranceTx * TILE_SIZE;
+    const gateEntranceY = gate.entranceTy * TILE_SIZE;
+    // Entrance must be walkable
+    expect(isPositionBlocked(gateEntranceX, gateEntranceY)).toBe(false);
+
+    // South down the main gate avenue (e.g. Y=18) must be walkable
+    expect(isPositionBlocked(gateEntranceX, 18 * TILE_SIZE)).toBe(false);
+
+    // North T-junction branch going west towards ECE must be walkable
+    expect(isPositionBlocked(50 * TILE_SIZE, 17 * TILE_SIZE)).toBe(false);
   });
 });
 
